@@ -16,6 +16,8 @@
 #include <string.h>
 /********************** NOTES **********************************************
 ...
+	INFO:
+	Odczytany prąd segmentu LED  =  4[mA]
 *******************************************************************************/
 
 //#ifdef LIB_MODULE_ENABLED // plik.c
@@ -29,9 +31,10 @@
 #define _CURRENT_SENSOR2_INDEX				(0)
 #define _CURRENT_SENSOR1_INDEX				(1)
 
-#define _ADC_MEASURE_PERIOD_MS				(10) // [ms]
+#define _ADC_MEASURE_TASK_PERIOD_MS			(5) // [ms]
 #define _DI_READ_TASK_PERIOD_MS				(20) // [ms]
-#define _MAIN_TASK_PERIOD_MS				(20) // [ms]
+#define _HEARTBEAT_TASK_PERIOD_MS			(1000) // [ms]
+#define _MAIN_TASK_PERIOD_MS				(10) // [ms]
 
 #define _CURRENT_AMP_GAIN					(20)
 #define _CURRENT_SHUNT_RES					(3300)	// [mOma]
@@ -47,7 +50,7 @@
 #endif
 
 #define _SEGLED_TEST_CURRENT_MIN			(3)	//	5 [mA]
-#define _SEGLED_TEST_CURRENT_MAX			(6)	//	5 [mA]
+#define _SEGLED_TEST_CURRENT_MAX			(5)	//	5 [mA]
 
 /* Private macros ------------------------------------------------------------*/
 
@@ -105,7 +108,7 @@ static AnalogData_t AnalogData = {0};
 volatile u32 SoftTimerCnt[ST_NB];
 
 static u8 Button_RxBuff[_BUTTON_RX_BUFFER_SIZE] = {0};
-static FIFO_TypeDef ButtonFifoRxData = { .BufferSize = _BUTTON_RX_BUFFER_SIZE, .pBuffer = Button_RxBuff };
+static FIFO_TypeDef ButtonFifoRxData = { .BufferSize = _BUTTON_RX_BUFFER_SIZE, .pBuffer = Button_RxBuff, .Tail = 0, .Head = 0 };
 
 /* Private function prototypes -----------------------------------------------*/
 
@@ -132,6 +135,16 @@ void Tester_Init(void)
 {
 	// ADC init
 	_ADC_Init();
+
+	LED_SetState(LED_1, DO_OFF);
+	LED_SetState(LED_2, DO_OFF);
+
+	LED_SetState(LED_Ext_G, DO_OFF);
+	LED_SetState(LED_Ext_R, DO_OFF);
+
+	for (u32 i = 0; i < DIS_SEG_NB; ++i) {
+		Display_SetSegment(i, DO_OFF);
+	}
 }
 
 /**
@@ -143,10 +156,10 @@ void Tester_Init(void)
 void Tester_ProcessingTask(void)
 {
 	//  ST_ADC_MEASURE
-	if( SOFT_TIMER_EXECUTE(SoftTimerCnt, ST_ADC_MEASURE_TASK, _ADC_MEASURE_PERIOD_MS) )
+	if( SOFT_TIMER_EXECUTE(SoftTimerCnt, ST_ADC_MEASURE_TASK, _ADC_MEASURE_TASK_PERIOD_MS) )
 	{
-		Filter_LPFfixedPointArithmetic(&AdcMeasureData.MeanAdc[_CURRENT_SENSOR1_INDEX], AdcMeasureData.RawAdc[_CURRENT_SENSOR1_INDEX], 4);
-		Filter_LPFfixedPointArithmetic(&AdcMeasureData.MeanAdc[_CURRENT_SENSOR2_INDEX], AdcMeasureData.RawAdc[_CURRENT_SENSOR2_INDEX], 4);
+		Filter_LPFfixedPointArithmetic(&AdcMeasureData.MeanAdc[_CURRENT_SENSOR1_INDEX], AdcMeasureData.RawAdc[_CURRENT_SENSOR1_INDEX], 2);
+		Filter_LPFfixedPointArithmetic(&AdcMeasureData.MeanAdc[_CURRENT_SENSOR2_INDEX], AdcMeasureData.RawAdc[_CURRENT_SENSOR2_INDEX], 2);
 
 		AnalogData.CurrSens1.Voltage_mV = _AdcRawToVolt_mV(_CURRENT_SENSOR1_INDEX);
 		AnalogData.CurrSens2.Voltage_mV = _AdcRawToVolt_mV(_CURRENT_SENSOR2_INDEX);
@@ -161,21 +174,31 @@ void Tester_ProcessingTask(void)
 		_Button_ProcessingTaks();
 	}
 
+	//  ST_HEARTBEAT_TASK
+	if( SOFT_TIMER_EXECUTE(SoftTimerCnt, ST_HEARTBEAT_TASK, _HEARTBEAT_TASK_PERIOD_MS) )
+	{
+		if( GPIO_GetInput(DI_DipSwitch1) == SET )
+		{
+			LED_SetState(LED_1, DO_TOGGLE);
+			LED_SetState(LED_2, DO_TOGGLE);
+		}
+	}
+
 	//  ST_MAIN_TASK
 	if( SOFT_TIMER_EXECUTE(SoftTimerCnt, ST_MAIN_TASK, _MAIN_TASK_PERIOD_MS) )
 	{
-		LED_SetState(LED_1, DO_TOGGLE);
-
 		ButtonType_e Button = _Button_GetLastPressed();
 
 		if( Button == BTN_S2 )
 		{
-			LED_SetState(LED_2, DO_TOGGLE);
+			for (u32 i = 0; i < DIS_SEG_NB; ++i) {
+				Display_SetSegment(i, DO_TOGGLE);
+			}
 		}
 
 		//<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 		// Test 7-seg display
-		static TestState_e TestState = TEST_START_STATE;
+		static TestState_e TestState = TEST_IDLE_STATE;
 		ErrorStatus TestErrState = SUCCESS;
 		switch (TestState)
 		{
@@ -186,7 +209,11 @@ void Tester_ProcessingTask(void)
 			case TEST_START_STATE:
 				LED_SetState(LED_Ext_G, DO_ON);
 				LED_SetState(LED_Ext_R, DO_ON);
-				TesterSteps_DisplaySegTest(TestState, DIS_SEG_A, _MAIN_TASK_PERIOD_MS, NULL, ENABLE);
+//				LED_SetState(LED_2, DO_ON);
+				for (u32 i = 0; i < DIS_SEG_NB; ++i) { // Off all segments
+					Display_SetSegment(i, DO_OFF);
+				}
+				TesterSteps_DisplaySegTest(TestState, DIS_SEG_A, _MAIN_TASK_PERIOD_MS, NULL, ENABLE); // Reset step
 				TestState++;
 				break;
 			case TEST_SEG_A_STATE:
@@ -240,11 +267,13 @@ void Tester_ProcessingTask(void)
 			case TEST_SUCCESS_STATE:
 				LED_SetState(LED_Ext_G, DO_ON);
 				LED_SetState(LED_Ext_R, DO_OFF);
+//				LED_SetState(LED_2, DO_OFF);
 				TestState = TEST_IDLE_STATE;
 				break;
 			case TEST_ERROR_STATE:
 				LED_SetState(LED_Ext_G, DO_OFF);
 				LED_SetState(LED_Ext_R, DO_ON);
+//				LED_SetState(LED_2, DO_OFF);
 				TestState = TEST_IDLE_STATE;
 				break;
 			default:
@@ -403,6 +432,7 @@ u32 TesterSteps_DisplaySegTest(u32 _MainState, DisSegType_e _Seg, u32 _TaskPerio
 	u32 MainState = _MainState;
 	static u32 TestState = 0;
 	u16 Current_mA = AnalogData.CurrSens2.Current_mA;
+	#define _OUT_CHANGE_TIMEOUT_MS				(50) // [ms]
 
 	if( _ResetState == ENABLE )
 	{
@@ -419,7 +449,7 @@ u32 TesterSteps_DisplaySegTest(u32 _MainState, DisSegType_e _Seg, u32 _TaskPerio
 			TestState++;
 			break;
 		case 1: // Wait...
-			if( _Timeout(100, _TaskPeriod_ms, DISABLE) == SET ) {
+			if( _Timeout(_OUT_CHANGE_TIMEOUT_MS, _TaskPeriod_ms, DISABLE) == SET ) {
 				TestState++;
 			}
 			break;
@@ -441,7 +471,7 @@ u32 TesterSteps_DisplaySegTest(u32 _MainState, DisSegType_e _Seg, u32 _TaskPerio
 			TestState++;
 			break;
 		case 4: // Wait...
-			if( _Timeout(100, _TaskPeriod_ms, DISABLE) == SET ) {
+			if( _Timeout(_OUT_CHANGE_TIMEOUT_MS, _TaskPeriod_ms, DISABLE) == SET ) {
 				TestState++;
 			}
 			break;
@@ -461,6 +491,7 @@ u32 TesterSteps_DisplaySegTest(u32 _MainState, DisSegType_e _Seg, u32 _TaskPerio
 			break;
 	}
 
+	#undef _OUT_CHANGE_TIMEOUT_MS
 	return MainState;
 }
 

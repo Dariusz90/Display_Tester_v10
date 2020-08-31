@@ -73,11 +73,13 @@ void Display_SetSegment(DisSegType_e _Seg, OutStateType_e _State)
 {
 	if(_State == DO_OFF)
     {   // OFF
-        LL_GPIO_ResetOutputPin(_DisSegOut[_Seg].GPIOx, _DisSegOut[_Seg].PinMask);
+//        LL_GPIO_ResetOutputPin(_DisSegOut[_Seg].GPIOx, _DisSegOut[_Seg].PinMask);
+        LL_GPIO_SetOutputPin(_DisSegOut[_Seg].GPIOx, _DisSegOut[_Seg].PinMask);
     }
     else if (_State == DO_ON)
     {   // ON
-        LL_GPIO_SetOutputPin(_DisSegOut[_Seg].GPIOx, _DisSegOut[_Seg].PinMask);
+//        LL_GPIO_SetOutputPin(_DisSegOut[_Seg].GPIOx, _DisSegOut[_Seg].PinMask);
+        LL_GPIO_ResetOutputPin(_DisSegOut[_Seg].GPIOx, _DisSegOut[_Seg].PinMask);
     }
     else if (_State == DO_TOGGLE)
     {   // TOGGLE
@@ -97,10 +99,12 @@ void LED_SetState(LedType_e _Led, OutStateType_e _State)
 	if(_State == DO_OFF)
     {   // OFF
         LL_GPIO_ResetOutputPin(_LedOut[_Led].GPIOx, _LedOut[_Led].PinMask);
+//        LL_GPIO_SetOutputPin(_LedOut[_Led].GPIOx, _LedOut[_Led].PinMask);
     }
     else if (_State == DO_ON)
     {   // ON
         LL_GPIO_SetOutputPin(_LedOut[_Led].GPIOx, _LedOut[_Led].PinMask);
+//        LL_GPIO_ResetOutputPin(_LedOut[_Led].GPIOx, _LedOut[_Led].PinMask);
     }
     else if (_State == DO_TOGGLE)
     {   // TOGGLE
@@ -110,15 +114,15 @@ void LED_SetState(LedType_e _Led, OutStateType_e _State)
 
 /**
  * @brief GPIO_GetInput
- * @note
+ * @note Input is pull-up
  * @param [in] _DI:
  * @retval FlagStatus: SET/RESET
  */
 FlagStatus GPIO_GetInput(DigInType_e _DI)
 {
     if( LL_GPIO_IsInputPinSet(_DigIn[_DI].GPIOx, _DigIn[_DI].PinMask) == 0 )
-		return RESET;
-   	return SET;
+		return SET;
+   	return RESET;
 }
 
 /* Private functions ---------------------------------------------------------*/
