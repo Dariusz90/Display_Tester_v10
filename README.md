@@ -13,8 +13,8 @@ I Wariant podstawowy
 - przepalenie leda/ segmentu - nie płynie odpowiedni prąd
 - zwarcia miedzy segmentami(zapalają się więcej niż 1 segment)
 3. Koniec testu sygnalizowany za pomocą diody D3:
-Zielony - OK
-Czerwony - Błąd
+- Zielony - OK
+- Czerwony - Błąd
  
 II Opcjonalnie:
 - SW1- wybór programu wspólną ANODA/KATODA
