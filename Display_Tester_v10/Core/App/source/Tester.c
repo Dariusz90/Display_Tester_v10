@@ -96,6 +96,11 @@ typedef enum {
 	TEST_ERROR_STATE,
 }TestState_e;
 
+typedef struct {
+	u32 SegCurrMeanSum;
+	u32 SegCurrMeanCnt;
+	u32 SegCurrMean;
+}TestData_t;
 /* Private constants ---------------------------------------------------------*/
 
 /* Private variables ---------------------------------------------------------*/
@@ -110,6 +115,8 @@ volatile u32 SoftTimerCnt[ST_NB];
 static u8 Button_RxBuff[_BUTTON_RX_BUFFER_SIZE] = {0};
 static FIFO_TypeDef ButtonFifoRxData = { .BufferSize = _BUTTON_RX_BUFFER_SIZE, .pBuffer = Button_RxBuff, .Tail = 0, .Head = 0 };
 
+static DisType_e DisplayType = DIS_COMMON_ANODE;
+static TestData_t TestData = {0};
 /* Private function prototypes -----------------------------------------------*/
 
 static void _ADC_Init(void);
@@ -121,8 +128,9 @@ static ButtonType_e _Button_GetLastPressed(void);
 static ErrorStatus _Current_Check(u32 _Curr_mA, u32 _MinCurr_mA, u32 _MaxCurr_mA);
 static FlagStatus _Timeout(u32 _Timeout_ms, u32 _TaskPeriod_ms, FunctionalState _ResetTimeState);
 
-u32 TesterSteps_DisplaySegTest(u32 _MainState, DisSegType_e _Seg, u32 _TaskPeriod_ms, ErrorStatus *_pErrStatus, FunctionalState _ResetState);
+static u32 _TesterSteps_DisplaySegTest(u32 _MainState, DisSegType_e _Seg, u32 _TaskPeriod_ms, ErrorStatus *_pErrStatus, FunctionalState _ResetState);
 
+static void _Display_PrintChar(char _Char);
 /* Public functions --------------------------------------------------------*/
 
 /**
@@ -136,6 +144,12 @@ void Tester_Init(void)
 	// ADC init
 	_ADC_Init();
 
+	// Check display type: Common anode or cathode
+	if( GPIO_GetInput(DI_DipSwitch1) == SET )
+		DisplayType = DIS_COMMON_CATHODE;
+	else
+		DisplayType = DIS_COMMON_ANODE;
+
 	LED_SetState(LED_1, DO_OFF);
 	LED_SetState(LED_2, DO_OFF);
 
@@ -143,7 +157,7 @@ void Tester_Init(void)
 	LED_SetState(LED_Ext_R, DO_OFF);
 
 	for (u32 i = 0; i < DIS_SEG_NB; ++i) {
-		Display_SetSegment(i, DO_OFF);
+		Display_SetSegment(i, DO_OFF, DisplayType);
 	}
 }
 
@@ -155,6 +169,7 @@ void Tester_Init(void)
  */
 void Tester_ProcessingTask(void)
 {
+	//<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 	//  ST_ADC_MEASURE
 	if( SOFT_TIMER_EXECUTE(SoftTimerCnt, ST_ADC_MEASURE_TASK, _ADC_MEASURE_TASK_PERIOD_MS) )
 	{
@@ -167,23 +182,29 @@ void Tester_ProcessingTask(void)
 		AnalogData.CurrSens1.Current_mA = (AnalogData.CurrSens1.Voltage_mV * 1000) / (_CURRENT_SHUNT_RES * _CURRENT_AMP_GAIN);
 		AnalogData.CurrSens2.Current_mA = (AnalogData.CurrSens2.Voltage_mV * 1000) / (_CURRENT_SHUNT_RES * _CURRENT_AMP_GAIN);
 	}
+	//>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
+	//<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 	//  ST_DI_READ_TASK
 	if( SOFT_TIMER_EXECUTE(SoftTimerCnt, ST_DI_READ_TASK, _DI_READ_TASK_PERIOD_MS) )
 	{
 		_Button_ProcessingTaks();
 	}
+	//>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
+	//<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 	//  ST_HEARTBEAT_TASK
 	if( SOFT_TIMER_EXECUTE(SoftTimerCnt, ST_HEARTBEAT_TASK, _HEARTBEAT_TASK_PERIOD_MS) )
 	{
-		if( GPIO_GetInput(DI_DipSwitch1) == SET )
+		if( GPIO_GetInput(DI_DipSwitch2) == SET )
 		{
 			LED_SetState(LED_1, DO_TOGGLE);
 			LED_SetState(LED_2, DO_TOGGLE);
 		}
 	}
+	//>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
+	//<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 	//  ST_MAIN_TASK
 	if( SOFT_TIMER_EXECUTE(SoftTimerCnt, ST_MAIN_TASK, _MAIN_TASK_PERIOD_MS) )
 	{
@@ -191,9 +212,42 @@ void Tester_ProcessingTask(void)
 
 		if( Button == BTN_S2 )
 		{
+#if 0
 			for (u32 i = 0; i < DIS_SEG_NB; ++i) {
-				Display_SetSegment(i, DO_TOGGLE);
+				Display_SetSegment(i, DO_TOGGLE, DisplayType);
 			}
+#else
+			// Print mean segment current
+			char num = '0';
+			static u32 PrintCurrState = 0;
+			switch (PrintCurrState) {
+				case 0:
+					num += _SEGLED_TEST_CURRENT_MIN;
+					_Display_PrintChar(num);
+					PrintCurrState++;
+					break;
+				case 1:
+					if( TestData.SegCurrMean < 10 )
+						num += TestData.SegCurrMean;
+					else
+						num = '-';
+					_Display_PrintChar(num);
+					PrintCurrState++;
+					break;
+				case 2:
+					num += _SEGLED_TEST_CURRENT_MAX;
+					_Display_PrintChar(num);
+					PrintCurrState++;
+					break;
+				case 3:
+					_Display_PrintChar('.');
+					PrintCurrState = 0;
+					break;
+				default:
+					PrintCurrState = 0;
+					break;
+			}
+#endif
 		}
 
 		//<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
@@ -207,64 +261,74 @@ void Tester_ProcessingTask(void)
 					TestState++;
 				break;
 			case TEST_START_STATE:
+				TestData.SegCurrMeanSum = 0;
+				TestData.SegCurrMeanCnt = 0;
 				LED_SetState(LED_Ext_G, DO_ON);
 				LED_SetState(LED_Ext_R, DO_ON);
 //				LED_SetState(LED_2, DO_ON);
 				for (u32 i = 0; i < DIS_SEG_NB; ++i) { // Off all segments
-					Display_SetSegment(i, DO_OFF);
+					Display_SetSegment(i, DO_OFF, DisplayType);
 				}
-				TesterSteps_DisplaySegTest(TestState, DIS_SEG_A, _MAIN_TASK_PERIOD_MS, NULL, ENABLE); // Reset step
+				_TesterSteps_DisplaySegTest(TestState, DIS_SEG_A, _MAIN_TASK_PERIOD_MS, NULL, ENABLE); // Reset step
 				TestState++;
 				break;
 			case TEST_SEG_A_STATE:
-				TestState = TesterSteps_DisplaySegTest(TestState, DIS_SEG_A, _MAIN_TASK_PERIOD_MS, &TestErrState, DISABLE);
+				TestState = _TesterSteps_DisplaySegTest(TestState, DIS_SEG_A, _MAIN_TASK_PERIOD_MS, &TestErrState, DISABLE);
 				if( TestErrState == ERROR ) {
 					TestState = TEST_ERROR_STATE;
 				}
 				break;
 			case TEST_SEG_B_STATE:
-				TestState = TesterSteps_DisplaySegTest(TestState, DIS_SEG_B, _MAIN_TASK_PERIOD_MS, &TestErrState, DISABLE);
+				TestState = _TesterSteps_DisplaySegTest(TestState, DIS_SEG_B, _MAIN_TASK_PERIOD_MS, &TestErrState, DISABLE);
 				if( TestErrState == ERROR ) {
 					TestState = TEST_ERROR_STATE;
 				}
 				break;
 			case TEST_SEG_C_STATE:
-				TestState = TesterSteps_DisplaySegTest(TestState, DIS_SEG_C, _MAIN_TASK_PERIOD_MS, &TestErrState, DISABLE);
+				TestState = _TesterSteps_DisplaySegTest(TestState, DIS_SEG_C, _MAIN_TASK_PERIOD_MS, &TestErrState, DISABLE);
 				if( TestErrState == ERROR ) {
 					TestState = TEST_ERROR_STATE;
 				}
 				break;
 			case TEST_SEG_D_STATE:
-				TestState = TesterSteps_DisplaySegTest(TestState, DIS_SEG_D, _MAIN_TASK_PERIOD_MS, &TestErrState, DISABLE);
+				TestState = _TesterSteps_DisplaySegTest(TestState, DIS_SEG_D, _MAIN_TASK_PERIOD_MS, &TestErrState, DISABLE);
 				if( TestErrState == ERROR ) {
 					TestState = TEST_ERROR_STATE;
 				}
 				break;
 			case TEST_SEG_E_STATE:
-				TestState = TesterSteps_DisplaySegTest(TestState, DIS_SEG_E, _MAIN_TASK_PERIOD_MS, &TestErrState, DISABLE);
+				TestState = _TesterSteps_DisplaySegTest(TestState, DIS_SEG_E, _MAIN_TASK_PERIOD_MS, &TestErrState, DISABLE);
 				if( TestErrState == ERROR ) {
 					TestState = TEST_ERROR_STATE;
 				}
 				break;
 			case TEST_SEG_F_STATE:
-				TestState = TesterSteps_DisplaySegTest(TestState, DIS_SEG_F, _MAIN_TASK_PERIOD_MS, &TestErrState, DISABLE);
+				TestState = _TesterSteps_DisplaySegTest(TestState, DIS_SEG_F, _MAIN_TASK_PERIOD_MS, &TestErrState, DISABLE);
 				if( TestErrState == ERROR ) {
 					TestState = TEST_ERROR_STATE;
 				}
 				break;
 			case TEST_SEG_G_STATE:
-				TestState = TesterSteps_DisplaySegTest(TestState, DIS_SEG_G, _MAIN_TASK_PERIOD_MS, &TestErrState, DISABLE);
+				TestState = _TesterSteps_DisplaySegTest(TestState, DIS_SEG_G, _MAIN_TASK_PERIOD_MS, &TestErrState, DISABLE);
 				if( TestErrState == ERROR ) {
 					TestState = TEST_ERROR_STATE;
 				}
 				break;
 			case TEST_SEG_DOT_STATE:
-				TestState = TesterSteps_DisplaySegTest(TestState, DIS_SEG_DOT, _MAIN_TASK_PERIOD_MS, &TestErrState, DISABLE);
-				if( TestErrState == ERROR ) {
-					TestState = TEST_ERROR_STATE;
+				if( DisplayType == DIS_COMMON_ANODE )
+				{
+					TestState = _TesterSteps_DisplaySegTest(TestState, DIS_SEG_DOT, _MAIN_TASK_PERIOD_MS, &TestErrState, DISABLE);
+					if( TestErrState == ERROR ) {
+						TestState = TEST_ERROR_STATE;
+					}
+				}
+				else
+				{
+					TestState = TEST_SUCCESS_STATE;
 				}
 				break;
 			case TEST_SUCCESS_STATE:
+				TestData.SegCurrMean = TestData.SegCurrMeanSum / TestData.SegCurrMeanCnt;
 				LED_SetState(LED_Ext_G, DO_ON);
 				LED_SetState(LED_Ext_R, DO_OFF);
 //				LED_SetState(LED_2, DO_OFF);
@@ -282,6 +346,8 @@ void Tester_ProcessingTask(void)
 		}
 		//>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 	}
+	//>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
 }
 
 
@@ -419,7 +485,7 @@ static FlagStatus _Timeout(u32 _Timeout_ms, u32 _TaskPeriod_ms, FunctionalState 
 }
 
 /**
- * @brief TesterSteps_DisplaySegTest
+ * @brief _TesterSteps_DisplaySegTest
  * @note
  * @param [in]_MainState:
  * @param [in]_Seg:
@@ -427,7 +493,7 @@ static FlagStatus _Timeout(u32 _Timeout_ms, u32 _TaskPeriod_ms, FunctionalState 
  * @param [in]_ResetState:
  * @retval none
  */
-u32 TesterSteps_DisplaySegTest(u32 _MainState, DisSegType_e _Seg, u32 _TaskPeriod_ms, ErrorStatus *_pErrStatus, FunctionalState _ResetState)
+static u32 _TesterSteps_DisplaySegTest(u32 _MainState, DisSegType_e _Seg, u32 _TaskPeriod_ms, ErrorStatus *_pErrStatus, FunctionalState _ResetState)
 {
 	u32 MainState = _MainState;
 	static u32 TestState = 0;
@@ -438,14 +504,14 @@ u32 TesterSteps_DisplaySegTest(u32 _MainState, DisSegType_e _Seg, u32 _TaskPerio
 	{
 		TestState = 0;
 		_Timeout(0, _TaskPeriod_ms, ENABLE);
-//		Display_SetSegment(_Seg, DO_OFF);
+//		Display_SetSegment(_Seg, DO_OFF, DisplayType);
 		return MainState;
 	}
 
 	switch (TestState)
 	{
 		case 0: // Turn OFF output
-			Display_SetSegment(_Seg, DO_OFF);
+			Display_SetSegment(_Seg, DO_OFF, DisplayType);
 			TestState++;
 			break;
 		case 1: // Wait...
@@ -457,7 +523,10 @@ u32 TesterSteps_DisplaySegTest(u32 _MainState, DisSegType_e _Seg, u32 _TaskPerio
 			if( Current_mA > _SEGLED_TEST_CURRENT_MIN)
 			{
 				if( _pErrStatus != NULL )
+				{
 					*_pErrStatus = ERROR;
+					TestData.SegCurrMean = Current_mA;
+				}
 				MainState++; // Go to next main state
 				TestState = 0;
 			}
@@ -467,7 +536,7 @@ u32 TesterSteps_DisplaySegTest(u32 _MainState, DisSegType_e _Seg, u32 _TaskPerio
 			}
 			break;
 		case 3: // Turn ON output
-			Display_SetSegment(_Seg, DO_ON);
+			Display_SetSegment(_Seg, DO_ON, DisplayType);
 			TestState++;
 			break;
 		case 4: // Wait...
@@ -478,9 +547,21 @@ u32 TesterSteps_DisplaySegTest(u32 _MainState, DisSegType_e _Seg, u32 _TaskPerio
 		case 5: // Check current and turn OFF output
 
 			if( _pErrStatus != NULL )
+			{
 				*_pErrStatus = _Current_Check(Current_mA, _SEGLED_TEST_CURRENT_MIN, _SEGLED_TEST_CURRENT_MAX);
 
-			Display_SetSegment(_Seg, DO_OFF);
+				if( *_pErrStatus == SUCCESS )
+				{
+					TestData.SegCurrMeanSum += Current_mA;
+					TestData.SegCurrMeanCnt++;
+				}
+				else
+				{
+					TestData.SegCurrMean = Current_mA;
+				}
+			}
+
+			Display_SetSegment(_Seg, DO_OFF, DisplayType);
 
 			MainState++; // Go to next main state
 			TestState = 0;
@@ -493,6 +574,25 @@ u32 TesterSteps_DisplaySegTest(u32 _MainState, DisSegType_e _Seg, u32 _TaskPerio
 
 	#undef _OUT_CHANGE_TIMEOUT_MS
 	return MainState;
+}
+
+/**
+ * @brief _Display_PrintChar.
+ * @note
+ * @param [in]_Char:
+ * @retval none
+ */
+static void _Display_PrintChar(char _Char)
+{
+    u8 outData = Decode_7seg(_Char);
+
+    for (u32 i = 0; i < DIS_SEG_NB; ++i)
+    {
+        if( outData & (1<<i) )
+        	Display_SetSegment((DisSegType_e)i, DO_ON, DisplayType);
+        else
+        	Display_SetSegment((DisSegType_e)i, DO_OFF, DisplayType);
+	}
 }
 
 //#endif /* LIB_MODULE_ENABLED */ // plik.c

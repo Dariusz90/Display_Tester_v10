@@ -46,6 +46,13 @@ typedef enum {
 }DisSegType_e;
 
 typedef enum {
+	DIS_COMMON_ANODE,
+	DIS_COMMON_CATHODE,
+
+	DIS_COMMON_NB
+}DisType_e;
+
+typedef enum {
 	LED_Ext_G,
 	LED_Ext_R,
 	LED_1,
@@ -69,7 +76,7 @@ typedef enum {
 
 /* Public function prototypes ----------------------------------------------*/
 
-void Display_SetSegment(DisSegType_e _Seg, OutStateType_e _State);
+void Display_SetSegment(DisSegType_e _Seg, OutStateType_e _State, DisType_e _DisType);
 void LED_SetState(LedType_e _Led, OutStateType_e _State);
 FlagStatus GPIO_GetInput(DigInType_e _DI);
 

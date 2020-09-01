@@ -67,19 +67,24 @@ static const DIO_GPIO_t _LedOut[LED_NB] = {
  * @note
  * @param [in]_Seg:
  * @param [in]_State:
+ * @param [in]_DisType:
  * @retval none
  */
-void Display_SetSegment(DisSegType_e _Seg, OutStateType_e _State)
+void Display_SetSegment(DisSegType_e _Seg, OutStateType_e _State, DisType_e _DisType)
 {
 	if(_State == DO_OFF)
     {   // OFF
-//        LL_GPIO_ResetOutputPin(_DisSegOut[_Seg].GPIOx, _DisSegOut[_Seg].PinMask);
-        LL_GPIO_SetOutputPin(_DisSegOut[_Seg].GPIOx, _DisSegOut[_Seg].PinMask);
+		if( _DisType == DIS_COMMON_CATHODE )
+			LL_GPIO_ResetOutputPin(_DisSegOut[_Seg].GPIOx, _DisSegOut[_Seg].PinMask);
+		else if( _DisType == DIS_COMMON_ANODE )
+			LL_GPIO_SetOutputPin(_DisSegOut[_Seg].GPIOx, _DisSegOut[_Seg].PinMask);
     }
     else if (_State == DO_ON)
     {   // ON
-//        LL_GPIO_SetOutputPin(_DisSegOut[_Seg].GPIOx, _DisSegOut[_Seg].PinMask);
-        LL_GPIO_ResetOutputPin(_DisSegOut[_Seg].GPIOx, _DisSegOut[_Seg].PinMask);
+    	if( _DisType == DIS_COMMON_CATHODE )
+    		LL_GPIO_SetOutputPin(_DisSegOut[_Seg].GPIOx, _DisSegOut[_Seg].PinMask);
+		else if( _DisType == DIS_COMMON_ANODE )
+			LL_GPIO_ResetOutputPin(_DisSegOut[_Seg].GPIOx, _DisSegOut[_Seg].PinMask);
     }
     else if (_State == DO_TOGGLE)
     {   // TOGGLE

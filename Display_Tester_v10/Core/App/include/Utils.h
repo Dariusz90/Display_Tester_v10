@@ -83,6 +83,8 @@ extern void SoftTimer_TickHandler(volatile u32 *_soft_timer, const u32 _st_size)
 
 s32 Filter_LPFfixedPointArithmetic(s32 *_pMem, s32 _rawData, const u8 _filterBeta);
 
+u8 Decode_7seg(char _Char);
+
 
 
 
