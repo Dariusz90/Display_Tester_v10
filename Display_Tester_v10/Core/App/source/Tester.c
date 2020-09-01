@@ -100,6 +100,9 @@ typedef struct {
 	u32 SegCurrMeanSum;
 	u32 SegCurrMeanCnt;
 	u32 SegCurrMean;
+	FunctionalState LockTest;
+	u16 SegLedCurrMin;
+	u16 SegLedCurrMax;
 }TestData_t;
 /* Private constants ---------------------------------------------------------*/
 
@@ -130,7 +133,7 @@ static FlagStatus _Timeout(u32 _Timeout_ms, u32 _TaskPeriod_ms, FunctionalState 
 
 static u32 _TesterSteps_DisplaySegTest(u32 _MainState, DisSegType_e _Seg, u32 _TaskPeriod_ms, ErrorStatus *_pErrStatus, FunctionalState _ResetState);
 
-static void _Display_PrintChar(char _Char);
+static void _Display_PrintChar(char _Char, FunctionalState _DotOnOff);
 /* Public functions --------------------------------------------------------*/
 
 /**
@@ -159,6 +162,9 @@ void Tester_Init(void)
 	for (u32 i = 0; i < DIS_SEG_NB; ++i) {
 		Display_SetSegment(i, DO_OFF, DisplayType);
 	}
+
+	TestData.SegLedCurrMin = _SEGLED_TEST_CURRENT_MIN;
+	TestData.SegLedCurrMax = _SEGLED_TEST_CURRENT_MAX;
 }
 
 /**
@@ -209,21 +215,40 @@ void Tester_ProcessingTask(void)
 	if( SOFT_TIMER_EXECUTE(SoftTimerCnt, ST_MAIN_TASK, _MAIN_TASK_PERIOD_MS) )
 	{
 		ButtonType_e Button = _Button_GetLastPressed();
+		static u32 PrintCurrState = 0;
+		char num = '0';
+
+#if 1 // Edit min, max current for segment
+		if( Button == BTN_S1 && TestData.LockTest == ENABLE )
+		{
+			if( PrintCurrState == 1 ) // Edit min. current for segment
+			{
+				TestData.SegLedCurrMin++;
+				if( TestData.SegLedCurrMin > 9 )
+					TestData.SegLedCurrMin = 0;
+				num += TestData.SegLedCurrMin;
+				_Display_PrintChar(num, DISABLE);
+			}
+			else if( PrintCurrState == 3 ) // Edit max. current for segment
+			{
+				TestData.SegLedCurrMax++;
+				if( TestData.SegLedCurrMax > 9 )
+					TestData.SegLedCurrMax = 0;
+				num += TestData.SegLedCurrMax;
+				_Display_PrintChar(num, DISABLE);
+			}
+		}
+#endif
 
 		if( Button == BTN_S2 )
 		{
-#if 0
-			for (u32 i = 0; i < DIS_SEG_NB; ++i) {
-				Display_SetSegment(i, DO_TOGGLE, DisplayType);
-			}
-#else
 			// Print mean segment current
-			char num = '0';
-			static u32 PrintCurrState = 0;
-			switch (PrintCurrState) {
+			switch (PrintCurrState)
+			{
 				case 0:
-					num += _SEGLED_TEST_CURRENT_MIN;
-					_Display_PrintChar(num);
+					num += TestData.SegLedCurrMin;
+					_Display_PrintChar(num, DISABLE);
+					TestData.LockTest = ENABLE;
 					PrintCurrState++;
 					break;
 				case 1:
@@ -231,23 +256,25 @@ void Tester_ProcessingTask(void)
 						num += TestData.SegCurrMean;
 					else
 						num = '-';
-					_Display_PrintChar(num);
+					_Display_PrintChar(num, ENABLE);
+					TestData.LockTest = ENABLE;
 					PrintCurrState++;
 					break;
 				case 2:
-					num += _SEGLED_TEST_CURRENT_MAX;
-					_Display_PrintChar(num);
+					num += TestData.SegLedCurrMax;
+					_Display_PrintChar(num, DISABLE);
+					TestData.LockTest = ENABLE;
 					PrintCurrState++;
 					break;
 				case 3:
-					_Display_PrintChar('.');
+					_Display_PrintChar('.', ENABLE);
+					TestData.LockTest = DISABLE;
 					PrintCurrState = 0;
 					break;
 				default:
 					PrintCurrState = 0;
 					break;
 			}
-#endif
 		}
 
 		//<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
@@ -257,7 +284,7 @@ void Tester_ProcessingTask(void)
 		switch (TestState)
 		{
 			case TEST_IDLE_STATE:
-				if( Button == BTN_S1 )
+				if( Button == BTN_S1 && TestData.LockTest == DISABLE )
 					TestState++;
 				break;
 			case TEST_START_STATE:
@@ -520,7 +547,7 @@ static u32 _TesterSteps_DisplaySegTest(u32 _MainState, DisSegType_e _Seg, u32 _T
 			}
 			break;
 		case 2: // Check current and turn OFF output.
-			if( Current_mA > _SEGLED_TEST_CURRENT_MIN)
+			if( Current_mA > TestData.SegLedCurrMin)
 			{
 				if( _pErrStatus != NULL )
 				{
@@ -548,7 +575,7 @@ static u32 _TesterSteps_DisplaySegTest(u32 _MainState, DisSegType_e _Seg, u32 _T
 
 			if( _pErrStatus != NULL )
 			{
-				*_pErrStatus = _Current_Check(Current_mA, _SEGLED_TEST_CURRENT_MIN, _SEGLED_TEST_CURRENT_MAX);
+				*_pErrStatus = _Current_Check(Current_mA, TestData.SegLedCurrMin, TestData.SegLedCurrMax);
 
 				if( *_pErrStatus == SUCCESS )
 				{
@@ -580,9 +607,10 @@ static u32 _TesterSteps_DisplaySegTest(u32 _MainState, DisSegType_e _Seg, u32 _T
  * @brief _Display_PrintChar.
  * @note
  * @param [in]_Char:
+ * @param [in]_DotOnOff:
  * @retval none
  */
-static void _Display_PrintChar(char _Char)
+static void _Display_PrintChar(char _Char, FunctionalState _DotOnOff)
 {
     u8 outData = Decode_7seg(_Char);
 
@@ -592,6 +620,10 @@ static void _Display_PrintChar(char _Char)
         	Display_SetSegment((DisSegType_e)i, DO_ON, DisplayType);
         else
         	Display_SetSegment((DisSegType_e)i, DO_OFF, DisplayType);
+
+        if( i == DIS_SEG_DOT && _DotOnOff == ENABLE ) {
+        	Display_SetSegment(DIS_SEG_DOT, DO_ON, DisplayType);
+        }
 	}
 }
 
