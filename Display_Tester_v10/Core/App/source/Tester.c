@@ -12,6 +12,7 @@
 #include "main.h"
 #include "GPIOdriver.h"
 #include "FIFO_Buffer.h"
+#include "ButtonDev.h"
 
 #include <string.h>
 /********************** NOTES **********************************************
@@ -43,7 +44,7 @@
 //#define FAC_CURRENT							((_ADC_REF_mV / 4095.0) / (_CURRENT_SHUNT_RES * _CURRENT_AMP_GAIN))
 
 //	Size of the circular receive buffer, must be power of 2
-#define _BUTTON_RX_BUFFER_SIZE					(8)
+#define _BUTTON_RX_BUFFER_SIZE				(8)
 
 #if ( _BUTTON_RX_BUFFER_SIZE & (_BUTTON_RX_BUFFER_SIZE - 1) )
 #	error RX buffer size is not a power of 2
@@ -77,7 +78,7 @@ typedef enum {
 	BTN_S2,
 	BTN_NB,
 	BTN_NONE
-}ButtonType_e;
+}BtnType_e;
 
 typedef enum {
 	TEST_IDLE_STATE,
@@ -126,7 +127,7 @@ static void _ADC_Init(void);
 static u32 _AdcRawToVolt_mV(u16 _AdcChannelIndex);
 
 static void _Button_ProcessingTaks(void);
-static ButtonType_e _Button_GetLastPressed(void);
+static BtnType_e _Button_GetLastPressed(void);
 
 static ErrorStatus _Current_Check(u32 _Curr_mA, u32 _MinCurr_mA, u32 _MaxCurr_mA);
 static FlagStatus _Timeout(u32 _Timeout_ms, u32 _TaskPeriod_ms, FunctionalState _ResetTimeState);
@@ -195,6 +196,9 @@ void Tester_ProcessingTask(void)
 	if( SOFT_TIMER_EXECUTE(SoftTimerCnt, ST_DI_READ_TASK, _DI_READ_TASK_PERIOD_MS) )
 	{
 		_Button_ProcessingTaks();
+#if 0 // Test Button library
+		ButtonDev_ProcessingTask(_DI_READ_TASK_PERIOD_MS);
+#endif
 	}
 	//>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
@@ -214,7 +218,35 @@ void Tester_ProcessingTask(void)
 	//  ST_MAIN_TASK
 	if( SOFT_TIMER_EXECUTE(SoftTimerCnt, ST_MAIN_TASK, _MAIN_TASK_PERIOD_MS) )
 	{
-		ButtonType_e Button = _Button_GetLastPressed();
+#if 0 // Test Button library
+		ButtonType_e Button = ButtonDev_GetButton();
+
+		if( Button == BUTTON_S1_LONG )
+		{
+			LED_SetState(LED_Ext_G, DO_ON);
+		}
+		else if( Button == BUTTON_S2_LONG )
+		{
+			LED_SetState(LED_2, DO_ON);
+		}
+		else if( Button == BUTTON_S1_SHORT )
+		{
+			LED_SetState(LED_Ext_G, DO_OFF);
+		}
+		else if( Button == BUTTON_S2_SHORT )
+		{
+			LED_SetState(LED_2, DO_OFF);
+		}
+		else if( Button == BUTTON_S2_BURST )
+		{
+			LED_SetState(LED_2, DO_TOGGLE);
+		}
+		else if( Button == BUTTON_S1_BURST )
+		{
+			LED_SetState(LED_Ext_G, DO_TOGGLE);
+		}
+#else
+		BtnType_e Button = _Button_GetLastPressed();
 		static u32 PrintCurrState = 0;
 		char num = '0';
 
@@ -372,6 +404,7 @@ void Tester_ProcessingTask(void)
 				break;
 		}
 		//>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+#endif
 	}
 	//>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
@@ -445,15 +478,15 @@ static void _Button_ProcessingTaks(void)
  * @brief _Button_GetLastPressed
  * @note
  * @param none
- * @retval ButtonType_e
+ * @retval BtnType_e
  */
-static ButtonType_e _Button_GetLastPressed(void)
+static BtnType_e _Button_GetLastPressed(void)
 {
 	u8 Data;
-	ButtonType_e Button = BTN_NONE;
+	BtnType_e Button = BTN_NONE;
 
 	if( fifo_getData(&ButtonFifoRxData, &Data) ) {
-		Button = (ButtonType_e)Data;
+		Button = (BtnType_e)Data;
 	}
 
 	return Button;

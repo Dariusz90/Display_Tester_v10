@@ -21,7 +21,7 @@
 
 /* Private macros ------------------------------------------------------------*/
 
-#define _FIFO_INCR(x, FIFO_SIZE)	(((x)+1)&((FIFO_SIZE)-1))
+#define _FIFO_INCR(x, FIFO_SIZE)				(((x)+1)&((FIFO_SIZE)-1))
 
 /* Private typedef -----------------------------------------------------------*/
 
