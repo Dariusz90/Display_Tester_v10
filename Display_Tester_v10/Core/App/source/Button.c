@@ -32,7 +32,8 @@
 
 /* Private macros ------------------------------------------------------------*/
 
-#define _FIFO_INCR(x, FIFO_SIZE)				(((x)+1)&((FIFO_SIZE)-1))
+//#define _FIFO_INCR(x, FIFO_SIZE)				(((x)+1)&((FIFO_SIZE)-1)) // Size of the circular receive buffer, must be power of 2
+#define _FIFO_INCR(x, FIFO_SIZE)				(((x)+1)%(FIFO_SIZE))
 
 //#define _READ_BUTTON_MASK(_Button_)				(u16)(1<<(_Button_))
 /* Private typedef -----------------------------------------------------------*/
