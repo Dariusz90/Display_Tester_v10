@@ -32,13 +32,13 @@
 #define _CURRENT_SENSOR2_INDEX				(0)
 #define _CURRENT_SENSOR1_INDEX				(1)
 
-#define _ADC_MEASURE_TASK_PERIOD_MS			(5) // [ms]
-#define _DI_READ_TASK_PERIOD_MS				(20) // [ms]
-#define _HEARTBEAT_TASK_PERIOD_MS			(1000) // [ms]
-#define _MAIN_TASK_PERIOD_MS				(10) // [ms]
+#define _ADC_MEASURE_TASK_PERIOD_MS			(5) 	// [ms]
+#define _DI_READ_TASK_PERIOD_MS				(20) 	// [ms]
+#define _HEARTBEAT_TASK_PERIOD_MS			(1000)	// [ms]
+#define _MAIN_TASK_PERIOD_MS				(10)	// [ms]
 
 #define _CURRENT_AMP_GAIN					(20)
-#define _CURRENT_SHUNT_RES					(3300)	// [mOma]
+#define _CURRENT_SHUNT_RES					(3300)	// [mOhm]
 
 // Current ADC to amperes factor
 //#define FAC_CURRENT							((_ADC_REF_mV / 4095.0) / (_CURRENT_SHUNT_RES * _CURRENT_AMP_GAIN))
